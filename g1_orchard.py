@@ -76,7 +76,6 @@ def build_scene(orchard_root: Path, seed: int):
     import warp as wp
     from treesim import builder, robot as orchard_robot
     from treesim.config import StiffnessModel, TreeConfig, preset
-    from treesim.sim import Sim
 
     cfg = TreeConfig(lsystem=preset("apple"))
     cfg.seed = seed
@@ -97,16 +96,16 @@ def build_scene(orchard_root: Path, seed: int):
     finally:
         orchard_robot.build_robot = original
 
-    sim = Sim(tree, solver="mujoco", fps=60, substeps=3, collisions=False)
-    return newton, wp, tree, sim
+    state, _ = tree.state_pair()
+    return newton, wp, tree, state
 
 
-def render_gif(newton, wp, tree, sim, output: Path, frames: int, fps: int,
+def render_gif(newton, wp, tree, state, output: Path, frames: int, fps: int,
                width: int, height: int) -> None:
     from PIL import Image
 
     viewer = newton.viewer.ViewerGL(headless=True, width=width, height=height)
-    sim.set_viewer(viewer)
+    viewer.set_model(tree.model)
     lo, hi = tree.skeleton.bounds()
     tree_height = float(hi[2] - lo[2])
     target = np.array([0.85, 0.0, max(0.9, float(lo[2] + 0.48 * tree_height))])
@@ -128,7 +127,9 @@ def render_gif(newton, wp, tree, sim, output: Path, frames: int, fps: int,
                 pitch=math.degrees(math.asin(float(direction[2]))),
                 yaw=math.degrees(math.atan2(float(direction[1]), float(direction[0]))),
             )
-            sim.render()
+            viewer.begin_frame(frame / fps)
+            viewer.log_state(state)
+            viewer.end_frame()
             wp.synchronize()
             pixels = viewer.get_frame().numpy()
             if pixels.shape[-1] == 4:
@@ -149,6 +150,20 @@ def render_gif(newton, wp, tree, sim, output: Path, frames: int, fps: int,
     )
 
 
+def render_usd(newton, tree, state, output: Path, frames: int, fps: int) -> None:
+    """Persistent fallback for servers without a usable off-screen GL context."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    viewer = newton.viewer.ViewerUSD(output_path=str(output), num_frames=frames)
+    viewer.set_model(tree.model)
+    try:
+        for frame in range(frames):
+            viewer.begin_frame(frame / fps)
+            viewer.log_state(state)
+            viewer.end_frame()
+    finally:
+        viewer.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--orchard-root", type=Path, default=DEFAULT_ORCHARD_ROOT)
@@ -160,26 +175,40 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/g1_orchard_seed42.gif")
     args = parser.parse_args()
 
-    os.environ.setdefault("PYGLET_HEADLESS", "1")
+    # With SSH X forwarding or a workstation desktop, pyglet should use that
+    # display. With no DISPLAY, request its EGL/surfaceless backend.
+    if not os.environ.get("DISPLAY"):
+        os.environ.setdefault("PYGLET_HEADLESS", "1")
     orchard_root = args.orchard_root.resolve()
     verify_orchardbench(orchard_root)
-    newton, wp, tree, sim = build_scene(orchard_root, args.seed)
-    render_gif(newton, wp, tree, sim, args.output, args.frames, args.fps,
-               args.width, args.height)
+    newton, wp, tree, state = build_scene(orchard_root, args.seed)
+    actual_output = args.output
+    render_error = None
+    try:
+        render_gif(newton, wp, tree, state, actual_output, args.frames, args.fps,
+                   args.width, args.height)
+    except Exception as exc:
+        render_error = f"{type(exc).__name__}: {exc}"
+        actual_output = args.output.with_suffix(".usda")
+        print(f"headless OpenGL unavailable ({render_error}); writing {actual_output}")
+        render_usd(newton, tree, state, actual_output, args.frames, args.fps)
     report = {
-        "passed": add_g1.report.get("contract_joint_count") == 43,
+        "passed": add_g1.report.get("contract_joint_count") == 43 and actual_output.is_file(),
         "purpose": "scene_assembly_only",
         "orchardbench_commit": ORCHARDBENCH_COMMIT,
         "seed": args.seed,
         "tree_bodies": tree.n_bodies,
         "apples": len(tree.apple_bodies),
         "g1": add_g1.report,
-        "render": str(args.output.resolve()),
+        "render_requested": str(args.output.resolve()),
+        "render_actual": str(actual_output.resolve()),
+        "render_fallback": actual_output != args.output,
+        "render_error": render_error,
     }
     report_path = args.output.with_suffix(".json")
     report_path.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
-    print(f"rendered {args.output}")
+    print(f"rendered {actual_output}")
     return 0 if report["passed"] else 1
 
 
