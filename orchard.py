@@ -68,7 +68,7 @@ def command_for(args: argparse.Namespace) -> list[str]:
             pixi_binary(), "run", "python", str(ROOT / "g1_orchard.py"),
             "--orchard-root", str(args.orchard_root.resolve()),
             "--seed", str(args.seed), "--frames", str(args.frames),
-            "--output", str(args.output),
+            "--output", str(args.output.resolve()),
         ]
     script = [pixi_binary(), "run", "python", "scripts/grow_tree.py", "--seed", str(args.seed)]
     if args.command == "tree":
