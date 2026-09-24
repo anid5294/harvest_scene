@@ -68,10 +68,21 @@ def command_for(args: argparse.Namespace) -> list[str]:
             pixi_binary(), "run", "python", str(ROOT / "g1_orchard.py"),
             "--orchard-root", str(args.orchard_root.resolve()),
             "--seed", str(args.seed), "--frames", str(args.frames),
+            "--width", str(args.width), "--height", str(args.height),
             "--output", str(args.output.resolve()),
         ]
-        if args.usd_only:
-            command.append("--usd-only")
+        xvfb = shutil.which("xvfb-run")
+        use_xvfb = args.renderer == "xvfb" or (
+            args.renderer == "auto" and not os.environ.get("DISPLAY") and xvfb is not None
+        )
+        if use_xvfb:
+            if not xvfb:
+                raise SystemExit(
+                    "--renderer xvfb requested, but xvfb-run is not installed; "
+                    "ask the workstation administrator to install the Ubuntu xvfb package"
+                )
+            screen = f"-screen 0 {args.width}x{args.height}x24 +extension GLX"
+            command = [xvfb, "-a", "-s", screen, *command]
         return command
     script = [pixi_binary(), "run", "python", "scripts/grow_tree.py", "--seed", str(args.seed)]
     if args.command == "tree":
@@ -101,10 +112,13 @@ def main() -> int:
             item.add_argument("--metrics", type=Path, default=WORK_ROOT / "artifacts/harvest_seed42.json")
         if name == "g1":
             item.add_argument("--output", type=Path, default=ROOT / "artifacts/g1_orchard_seed42.gif")
+            item.add_argument("--width", type=int, default=640)
+            item.add_argument("--height", type=int, default=360)
             item.add_argument(
-                "--usd-only",
-                action="store_true",
-                help="skip OpenGL and write a USD scene directly",
+                "--renderer",
+                choices=("auto", "egl", "xvfb"),
+                default="auto",
+                help="headless rendering backend (auto prefers Xvfb when available)",
             )
     args = parser.parse_args()
     repo = args.orchard_root.resolve()

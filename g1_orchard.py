@@ -150,20 +150,6 @@ def render_gif(newton, wp, tree, state, output: Path, frames: int, fps: int,
     )
 
 
-def render_usd(newton, tree, state, output: Path, frames: int, fps: int) -> None:
-    """Persistent fallback for servers without a usable off-screen GL context."""
-    output.parent.mkdir(parents=True, exist_ok=True)
-    viewer = newton.viewer.ViewerUSD(output_path=str(output), num_frames=frames)
-    viewer.set_model(tree.model)
-    try:
-        for frame in range(frames):
-            viewer.begin_frame(frame / fps)
-            viewer.log_state(state)
-            viewer.end_frame()
-    finally:
-        viewer.close()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--orchard-root", type=Path, default=DEFAULT_ORCHARD_ROOT)
@@ -173,11 +159,6 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=360)
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/g1_orchard_seed42.gif")
-    parser.add_argument(
-        "--usd-only",
-        action="store_true",
-        help="skip OpenGL and write a USD scene directly (recommended on headless servers)",
-    )
     args = parser.parse_args()
 
     # With SSH X forwarding or a workstation desktop, pyglet should use that
@@ -187,43 +168,42 @@ def main() -> int:
     orchard_root = args.orchard_root.resolve()
     verify_orchardbench(orchard_root)
     newton, wp, tree, state = build_scene(orchard_root, args.seed)
-    actual_output = args.output
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.unlink(missing_ok=True)
     render_error = None
-    if args.usd_only:
-        actual_output = args.output.with_suffix(".usda")
-        print(f"USD-only mode: writing {actual_output}")
-        render_usd(newton, tree, state, actual_output, args.frames, args.fps)
-    else:
-        try:
-            render_gif(newton, wp, tree, state, actual_output, args.frames, args.fps,
-                       args.width, args.height)
-        except BaseException as exc:
-            # pyglet's ShaderException can bypass ``except Exception`` in some
-            # releases. Preserve user interrupts and fall back for renderer errors.
-            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
-                raise
-            render_error = f"{type(exc).__name__}: {exc}"
-            actual_output = args.output.with_suffix(".usda")
-            print(f"headless OpenGL unavailable ({render_error}); writing {actual_output}")
-            render_usd(newton, tree, state, actual_output, args.frames, args.fps)
+    try:
+        render_gif(newton, wp, tree, state, args.output, args.frames, args.fps,
+                   args.width, args.height)
+    except BaseException as exc:
+        # pyglet's ShaderException can bypass ``except Exception`` in some
+        # releases. Preserve user interrupts but report renderer failures.
+        if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+            raise
+        render_error = f"{type(exc).__name__}: {exc}"
+        print(f"GIF rendering failed: {render_error}", file=sys.stderr)
     report = {
-        "passed": add_g1.report.get("contract_joint_count") == 43 and actual_output.is_file(),
+        "passed": (
+            add_g1.report.get("contract_joint_count") == 43
+            and render_error is None
+            and args.output.is_file()
+        ),
         "purpose": "scene_assembly_only",
         "orchardbench_commit": ORCHARDBENCH_COMMIT,
         "seed": args.seed,
         "tree_bodies": tree.n_bodies,
         "apples": len(tree.apple_bodies),
         "g1": add_g1.report,
-        "render_requested": str(args.output.resolve()),
-        "render_actual": str(actual_output.resolve()),
-        "render_fallback": not args.usd_only and actual_output != args.output,
-        "render_mode": "usd" if actual_output.suffix == ".usda" else "gif",
+        "render_output": str(args.output.resolve()),
+        "render_mode": "gif",
+        "display": os.environ.get("DISPLAY"),
+        "pyglet_headless": os.environ.get("PYGLET_HEADLESS") == "1",
         "render_error": render_error,
     }
     report_path = args.output.with_suffix(".json")
     report_path.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
-    print(f"rendered {actual_output}")
+    if report["passed"]:
+        print(f"rendered {args.output}")
     return 0 if report["passed"] else 1
 
 
