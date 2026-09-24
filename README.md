@@ -48,12 +48,15 @@ python orchard.py view
 python orchard.py usd
 python orchard.py harvest
 python orchard.py g1
+python orchard.py g1 --usd-only  # for servers without working headless OpenGL
 ```
 
 `python orchard.py g1` is the first G1/OrchardBench integration gate. It imports
 the vendored full G1 + dual Dex3 model with a fixed base, verifies the 43
 contract joints, places it beside a seed-42 fruit tree, and writes a short
-headless GIF plus JSON report under `artifacts/`.
+headless GIF plus JSON report under `artifacts/`. On a server without a usable
+headless OpenGL context, it falls back to a viewable USD scene. Pass
+`--usd-only` to skip OpenGL and create that scene directly.
 
 `contract.py` is the executable `g1_29body_dex3_43d_v1` interface. Robot,
 camera, recorder, and hardware adapters must pass its validation before their

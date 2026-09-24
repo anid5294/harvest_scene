@@ -64,12 +64,15 @@ def pixi_binary() -> str:
 
 def command_for(args: argparse.Namespace) -> list[str]:
     if args.command == "g1":
-        return [
+        command = [
             pixi_binary(), "run", "python", str(ROOT / "g1_orchard.py"),
             "--orchard-root", str(args.orchard_root.resolve()),
             "--seed", str(args.seed), "--frames", str(args.frames),
             "--output", str(args.output.resolve()),
         ]
+        if args.usd_only:
+            command.append("--usd-only")
+        return command
     script = [pixi_binary(), "run", "python", "scripts/grow_tree.py", "--seed", str(args.seed)]
     if args.command == "tree":
         return script + ["--apples", "--break", "--viewer", "null", "--frames", str(args.frames)]
@@ -98,6 +101,11 @@ def main() -> int:
             item.add_argument("--metrics", type=Path, default=WORK_ROOT / "artifacts/harvest_seed42.json")
         if name == "g1":
             item.add_argument("--output", type=Path, default=ROOT / "artifacts/g1_orchard_seed42.gif")
+            item.add_argument(
+                "--usd-only",
+                action="store_true",
+                help="skip OpenGL and write a USD scene directly",
+            )
     args = parser.parse_args()
     repo = args.orchard_root.resolve()
     check = verify_orchardbench(repo)

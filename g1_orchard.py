@@ -173,6 +173,11 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=360)
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/g1_orchard_seed42.gif")
+    parser.add_argument(
+        "--usd-only",
+        action="store_true",
+        help="skip OpenGL and write a USD scene directly (recommended on headless servers)",
+    )
     args = parser.parse_args()
 
     # With SSH X forwarding or a workstation desktop, pyglet should use that
@@ -184,14 +189,23 @@ def main() -> int:
     newton, wp, tree, state = build_scene(orchard_root, args.seed)
     actual_output = args.output
     render_error = None
-    try:
-        render_gif(newton, wp, tree, state, actual_output, args.frames, args.fps,
-                   args.width, args.height)
-    except Exception as exc:
-        render_error = f"{type(exc).__name__}: {exc}"
+    if args.usd_only:
         actual_output = args.output.with_suffix(".usda")
-        print(f"headless OpenGL unavailable ({render_error}); writing {actual_output}")
+        print(f"USD-only mode: writing {actual_output}")
         render_usd(newton, tree, state, actual_output, args.frames, args.fps)
+    else:
+        try:
+            render_gif(newton, wp, tree, state, actual_output, args.frames, args.fps,
+                       args.width, args.height)
+        except BaseException as exc:
+            # pyglet's ShaderException can bypass ``except Exception`` in some
+            # releases. Preserve user interrupts and fall back for renderer errors.
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            render_error = f"{type(exc).__name__}: {exc}"
+            actual_output = args.output.with_suffix(".usda")
+            print(f"headless OpenGL unavailable ({render_error}); writing {actual_output}")
+            render_usd(newton, tree, state, actual_output, args.frames, args.fps)
     report = {
         "passed": add_g1.report.get("contract_joint_count") == 43 and actual_output.is_file(),
         "purpose": "scene_assembly_only",
@@ -202,7 +216,8 @@ def main() -> int:
         "g1": add_g1.report,
         "render_requested": str(args.output.resolve()),
         "render_actual": str(actual_output.resolve()),
-        "render_fallback": actual_output != args.output,
+        "render_fallback": not args.usd_only and actual_output != args.output,
+        "render_mode": "usd" if actual_output.suffix == ".usda" else "gif",
         "render_error": render_error,
     }
     report_path = args.output.with_suffix(".json")
