@@ -63,6 +63,13 @@ def pixi_binary() -> str:
 
 
 def command_for(args: argparse.Namespace) -> list[str]:
+    if args.command == "g1":
+        return [
+            pixi_binary(), "run", "python", str(ROOT / "g1_orchard.py"),
+            "--orchard-root", str(args.orchard_root.resolve()),
+            "--seed", str(args.seed), "--frames", str(args.frames),
+            "--output", str(args.output),
+        ]
     script = [pixi_binary(), "run", "python", "scripts/grow_tree.py", "--seed", str(args.seed)]
     if args.command == "tree":
         return script + ["--apples", "--break", "--viewer", "null", "--frames", str(args.frames)]
@@ -80,7 +87,7 @@ def main() -> int:
     parser.add_argument("--orchard-root", type=Path, default=DEFAULT_ORCHARD_ROOT)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check")
-    for name in ("tree", "view", "usd", "harvest"):
+    for name in ("tree", "view", "usd", "harvest", "g1"):
         item = sub.add_parser(name)
         item.add_argument("--seed", type=int, default=42)
         item.add_argument("--frames", type=int, default=300)
@@ -89,6 +96,8 @@ def main() -> int:
         if name == "harvest":
             item.add_argument("--viewer", choices=("gl", "null"), default="gl")
             item.add_argument("--metrics", type=Path, default=WORK_ROOT / "artifacts/harvest_seed42.json")
+        if name == "g1":
+            item.add_argument("--output", type=Path, default=ROOT / "artifacts/g1_orchard_seed42.gif")
     args = parser.parse_args()
     repo = args.orchard_root.resolve()
     check = verify_orchardbench(repo)

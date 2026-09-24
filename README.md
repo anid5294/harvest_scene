@@ -39,9 +39,7 @@ written with `--report PATH`.
 
 ## OrchardBench integration
 
-Keep a clean OrchardBench checkout beside this repository. `orchard.py` checks
-its exact revision before every run and stores uncommitted run manifests under
-`artifacts/`.
+`orchard.py` checks its exact revision before every run and stores run manifests under `artifacts/`.
 
 ```sh
 python orchard.py check
@@ -49,7 +47,13 @@ python orchard.py tree --frames 120
 python orchard.py view
 python orchard.py usd
 python orchard.py harvest
+python orchard.py g1
 ```
+
+`python orchard.py g1` is the first G1/OrchardBench integration gate. It imports
+the vendored full G1 + dual Dex3 model with a fixed base, verifies the 43
+contract joints, places it beside a seed-42 fruit tree, and writes a short
+headless GIF plus JSON report under `artifacts/`.
 
 `contract.py` is the executable `g1_29body_dex3_43d_v1` interface. Robot,
 camera, recorder, and hardware adapters must pass its validation before their
@@ -66,6 +70,7 @@ python contract.py
 demo.py                 Environment, policy, rollout, and verification
 contract.py             Canonical 43-channel and camera schema validation
 orchard.py              Pinned OrchardBench launcher and run provenance
+g1_orchard.py            Fixed-base G1 + orchard assembly and headless render
 assets/unitree_g1/      Vendored G1 MJCF and referenced meshes
 assets/ycb/013_apple/   YCB apple mesh and texture
 requirements.txt        Python dependencies
