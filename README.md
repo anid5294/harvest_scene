@@ -1,81 +1,107 @@
 # Harvest MuJoCo
 
-A MuJoCo tabletop pick-and-place demo using a Unitree G1 humanoid with two
-7-DoF dexterous hands and a YCB apple. A rule-based feedback policy grasps the
-apple, lifts it, transfers it, and places it in a tray.
+Fixed-base Unitree G1 and Dex3 harvesting tests built on
+[OrchardBench](https://github.com/humphreymunn/orchardbench). The current gate
+commands the 43-joint robot to detach one apple from a generated tree and place
+it in a tray.
 
-The G1 pelvis is currently fixed. The policy uses MuJoCo state directly; 
-it is not learned and does not use camera perception.
+## First harvest test
 
-## Setup
+The test passes only when all of these conditions hold:
 
-Python 3.11 or newer recommended. 
+1. the full G1/Dex3 model loads with the contract's 43 joints;
+2. the right arm reaches a selected apple;
+3. the apple detaches through OrchardBench's force-based stem model;
+4. the robot transports and releases the apple;
+5. the apple settles inside the physical tray; and
+6. a valid 30 Hz state/action trace and headless MP4 are written.
+
+This is a feedback-gated scripted policy using simulator state. It is not a
+learned or vision policy. The robot base is fixed for this test.
+
+## Workstation setup
+
+Use sibling checkouts so this repository does not modify OrchardBench:
+
+```text
+work/
+├── harvest_scene/
+├── orchardbench/
+└── .tools/bin/pixi
+```
+
+Clone and pin the dependencies:
+
+```sh
+git clone https://github.com/anid5294/harvest_scene.git
+git -C harvest_scene switch --track origin/feature/orchardbench-g1-contract
+
+git clone https://github.com/humphreymunn/orchardbench.git
+git -C orchardbench checkout 6313313db8b1a7d23fb2cc3afd67cac46f29399a
+```
+
+Install Pixi under the work directory if it is not already available:
+
+```sh
+mkdir -p .tools/bin
+curl -fsSL \
+  https://github.com/prefix-dev/pixi/releases/download/v0.81.0/pixi-x86_64-unknown-linux-musl.tar.gz \
+  | tar -xz -C .tools/bin
+export PATH="$PWD/.tools/bin:$PATH"
+```
+
+The workstation also needs an NVIDIA GPU, `xvfb-run`, and `ffmpeg`. Confirm the
+checkout and warm the OrchardBench environment before running the gate:
+
+```sh
+cd harvest_scene
+python3 orchard.py check
+cd ../orchardbench
+pixi run python -c 'import newton, warp; print("OrchardBench environment ready")'
+cd ../harvest_scene
+```
+
+## Run
+
+```sh
+python3 orchard.py g1-harvest
+```
+
+The command exits with status `0` only on success. It writes:
+
+- `artifacts/g1_harvest_seed42.mp4` — 960 × 540 headless overview;
+- `artifacts/g1_harvest_seed42.json` — result, transitions, and provenance;
+- `artifacts/g1_harvest_seed42.npz` — contract-ordered state/action trace; and
+- `artifacts/runs/*_g1-harvest.json` — launcher manifest.
+
+The trace is intentionally marked `training_eligible: false` until the three
+required robot camera streams are recorded. It does not fabricate camera data.
+
+## Other checks
+
+```sh
+python3 orchard.py tree --frames 120   # OrchardBench physics
+python3 orchard.py g1                  # G1/tree assembly render
+python3 contract.py --self-test        # data-contract validation
+```
+
+The standalone tabletop demo remains available with a local Python environment:
 
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
-```
-
-## Run
-
-Interactive viewer:
-
-```sh
-.venv/bin/mjpython demo.py
-```
-
-On non-macOS platforms, `.venv/bin/python demo.py` can be used instead.
-
-Headless verification:
-
-```sh
-.venv/bin/python demo.py --headless
-```
-
-The process exits with status `0` only when the apple is released, settled
-inside the tray, and MuJoCo reports no warnings. An optional JSON report can be
-written with `--report PATH`.
-
-## OrchardBench integration
-
-`orchard.py` checks its exact revision before every run and stores run manifests under `artifacts/`.
-
-```sh
-python orchard.py check
-python orchard.py tree --frames 120
-python orchard.py view
-python orchard.py usd
-python orchard.py harvest
-python orchard.py g1
-python orchard.py g1 --renderer xvfb  # force an invisible X server
-```
-
-`python orchard.py g1` is the first G1/OrchardBench integration gate. It imports
-the vendored full G1 + dual Dex3 model with a fixed base, verifies the 43
-contract joints, places it beside a seed-42 fruit tree, and writes a short
-headless GIF plus JSON report under `artifacts/`. On a displayless Linux server,
-the launcher automatically uses `xvfb-run` when it is installed; otherwise it
-uses pyglet's EGL headless mode. Rendering failure makes the command fail and is
-recorded in the JSON report; this command never substitutes a USD artifact.
-
-`contract.py` is the executable `g1_29body_dex3_43d_v1` interface. Robot,
-camera, recorder, and hardware adapters must pass its validation before their
-episodes can be used for training.
-
-```sh
-python contract.py --self-test
-python contract.py
+python demo.py --headless
 ```
 
 ## Repository layout
 
 ```text
-demo.py                 Environment, policy, rollout, and verification
-contract.py             Canonical 43-channel and camera schema validation
-orchard.py              Pinned OrchardBench launcher and run provenance
-g1_orchard.py            Fixed-base G1 + orchard assembly and headless render
-assets/unitree_g1/      Vendored G1 MJCF and referenced meshes
-assets/ycb/013_apple/   YCB apple mesh and texture
-requirements.txt        Python dependencies
+g1_harvest.py          G1 apple-detach and tray-placement gate
+g1_orchard.py          G1/orchard assembly render
+orchard.py             Pinned launcher and run provenance
+contract.py            Canonical joint and camera data validation
+demo.py                Standalone YCB tabletop pick-and-place demo
+assets/                 Vendored G1 and YCB apple assets
+tests/                  Deterministic geometry and contract checks
 ```

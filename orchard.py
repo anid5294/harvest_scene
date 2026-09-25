@@ -63,6 +63,21 @@ def pixi_binary() -> str:
 
 
 def command_for(args: argparse.Namespace) -> list[str]:
+    if args.command == "g1-harvest":
+        xvfb = shutil.which("xvfb-run")
+        if not xvfb:
+            raise SystemExit("g1-harvest requires xvfb-run for stable headless video")
+        inner = [
+            pixi_binary(), "run", "python", str(ROOT / "g1_harvest.py"),
+            "--orchard-root", str(args.orchard_root.resolve()),
+            "--seed", str(args.seed), "--max-frames", str(args.frames),
+            "--width", str(args.width), "--height", str(args.height),
+            "--video", str(args.video.resolve()),
+            "--report", str(args.report.resolve()),
+            "--trace", str(args.trace.resolve()),
+        ]
+        screen = f"-screen 0 {args.width}x{args.height}x24 +extension GLX"
+        return [xvfb, "-a", "-s", screen, *inner]
     if args.command == "g1":
         command = [
             pixi_binary(), "run", "python", str(ROOT / "g1_orchard.py"),
@@ -101,10 +116,10 @@ def main() -> int:
     parser.add_argument("--orchard-root", type=Path, default=DEFAULT_ORCHARD_ROOT)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check")
-    for name in ("tree", "view", "usd", "harvest", "g1"):
+    for name in ("tree", "view", "usd", "harvest", "g1", "g1-harvest"):
         item = sub.add_parser(name)
         item.add_argument("--seed", type=int, default=42)
-        item.add_argument("--frames", type=int, default=300)
+        item.add_argument("--frames", type=int, default=1000 if name == "g1-harvest" else 300)
         if name == "usd":
             item.add_argument("--output", type=Path, default=WORK_ROOT / "artifacts/tree_seed42.usda")
         if name == "harvest":
@@ -120,6 +135,12 @@ def main() -> int:
                 default="auto",
                 help="headless rendering backend (auto prefers Xvfb when available)",
             )
+        if name == "g1-harvest":
+            item.add_argument("--video", type=Path, default=ROOT / "artifacts/g1_harvest_seed42.mp4")
+            item.add_argument("--report", type=Path, default=ROOT / "artifacts/g1_harvest_seed42.json")
+            item.add_argument("--trace", type=Path, default=ROOT / "artifacts/g1_harvest_seed42.npz")
+            item.add_argument("--width", type=int, default=960)
+            item.add_argument("--height", type=int, default=540)
     args = parser.parse_args()
     repo = args.orchard_root.resolve()
     check = verify_orchardbench(repo)

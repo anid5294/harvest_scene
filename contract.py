@@ -121,6 +121,27 @@ def validate_episode(
     images: Mapping[str, np.ndarray],
 ) -> None:
     """Validate the core synchronized arrays before LeRobot v2.1 encoding."""
+    validate_state_action_trace(states, actions, timestamps)
+    frames = states.shape[0]
+    missing = [name for name in REQUIRED_CAMERAS if name not in images]
+    if missing:
+        raise ContractError(f"missing required cameras: {missing}")
+    unknown = set(images) - set(REQUIRED_CAMERAS) - set(OPTIONAL_CAMERAS)
+    if unknown:
+        raise ContractError(f"unknown camera keys: {sorted(unknown)}")
+    for name, video in images.items():
+        if video.dtype != np.uint8 or video.shape != (frames, *IMAGE_SHAPE):
+            raise ContractError(
+                f"{name} must be uint8[frames,480,640,3], got {video.dtype}{video.shape}"
+            )
+
+
+def validate_state_action_trace(
+    states: np.ndarray,
+    actions: np.ndarray,
+    timestamps: np.ndarray,
+) -> None:
+    """Validate a 30 Hz control trace before robot cameras are attached."""
     if states.ndim != 2:
         raise ContractError("states must have shape [frames, 43]")
     frames = states.shape[0]
@@ -133,17 +154,6 @@ def validate_episode(
     expected = np.arange(frames, dtype=np.float32) / np.float32(FPS)
     if not np.allclose(timestamps, expected, atol=1e-6, rtol=0.0):
         raise ContractError("timestamps are not a contiguous 30 Hz sample grid")
-    missing = [name for name in REQUIRED_CAMERAS if name not in images]
-    if missing:
-        raise ContractError(f"missing required cameras: {missing}")
-    unknown = set(images) - set(REQUIRED_CAMERAS) - set(OPTIONAL_CAMERAS)
-    if unknown:
-        raise ContractError(f"unknown camera keys: {sorted(unknown)}")
-    for name, video in images.items():
-        if video.dtype != np.uint8 or video.shape != (frames, *IMAGE_SHAPE):
-            raise ContractError(
-                f"{name} must be uint8[frames,480,640,3], got {video.dtype}{video.shape}"
-            )
 
 
 def schema() -> dict:
