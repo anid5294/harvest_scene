@@ -16,6 +16,10 @@ import xml.etree.ElementTree as ET
 
 import mujoco
 import numpy as np
+from recording.recorder import (
+    HarvestRecorder,
+    CameraConfig,
+)
 
 ROOT = Path(__file__).resolve().parent
 ROBOT_MODEL = ROOT / "assets/unitree_g1/model.xml"
@@ -50,6 +54,40 @@ def build_model():
     ET.SubElement(asset, "material", name="apple_material", texture="apple_texture", specular="0.15", shininess="0.15")
 
     world = root.findall("worldbody")[-1]
+
+    ## Added cameras
+    ET.SubElement(
+        world,
+        "camera",
+        name="front",
+        pos="1.45 -1.45 1.45",
+        xyaxes="0.707 0.707 0 -0.25 0.25 0.935",
+        fovy="55",
+    )
+
+    left_wrist = root.find(".//body[@name='left_wrist_yaw_link']")
+
+    ET.SubElement(
+        left_wrist,
+        "camera",
+        name="left_wrist",
+        pos="0.04 0 0.03",
+        quat="1 0 0 0",
+        fovy="70",
+    )
+
+
+    right_wrist = root.find(".//body[@name='right_wrist_yaw_link']")
+
+    ET.SubElement(
+        right_wrist,
+        "camera",
+        name="right_wrist",
+        pos="0.04 0 0.03",
+        quat="1 0 0 0",
+        fovy="70",
+    )
+
     ET.SubElement(world, "geom", name="table", type="box", pos="0.48 -0.12 0.89",
                   size="0.21 0.40 0.025", rgba="0.93 0.93 0.93 1")
     for x in (0.34, 0.62):
@@ -381,6 +419,36 @@ def run(args):
     policy.start_action = data.qpos[qpos_addresses].copy()
     policy.initial_fruit_height = float(data.body("fruit").xpos[2])
 
+    recorder = None
+
+    if args.record:
+        cameras = {
+            "front": CameraConfig(
+                name="front",
+                width=640,
+                height=480,
+            ),
+            "left_wrist": CameraConfig(
+                name="left_wrist",
+                width=640,
+                height=480,
+            ),
+            "right_wrist": CameraConfig(
+                name="right_wrist",
+                width=640,
+                height=480,
+            ),
+        }
+
+        recorder = HarvestRecorder(
+            model=model,
+            root=args.dataset_root,
+            repo_id=args.repo_id,
+            fps=args.record_fps,
+            cameras=cameras,
+            task="Pick up the apple and place it in the tray.",
+        )
+
     viewer = None
     if not args.headless:
         from mujoco import viewer as mjviewer
@@ -397,7 +465,15 @@ def run(args):
             if policy.state != last_state:
                 print(policy.state, flush=True)
                 last_state = policy.state
-            data.ctrl[:] = policy.act(observation, model.opt.timestep)
+            # data.ctrl[:] = policy.act(observation, model.opt.timestep)
+            action = policy.act(observation, model.opt.timestep)
+            data.ctrl[:] = action
+
+            if recorder is not None:
+                recorder.add_frame(
+                    data=data,
+                    action=action,
+                )
             data.qfrc_applied[:] = 0.0
             data.qfrc_applied[dof_addresses] = data.qfrc_bias[dof_addresses]
             mujoco.mj_step(model, data)
@@ -410,6 +486,15 @@ def run(args):
 
         final = observe(model, data, qpos_addresses)
         passed = policy.state == "SUCCESS" and final.placement["passed"]
+        if recorder is not None:
+
+            if passed:
+                print("Saving successful LeRobot episode...")
+                recorder.save_episode()
+
+            else:
+                print("Discarding failed episode...")
+                recorder.discard_episode()
         report = {
             "demo": "rule_based_policy_pick_place",
             "policy": "closed-loop feedback state machine",
@@ -430,7 +515,14 @@ def run(args):
             args.report.write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, indent=2))
         return 0 if report["passed"] else 1
+    # finally:
+    #     if viewer is not None:
+    #         viewer.close()
     finally:
+
+        if recorder is not None:
+            recorder.finalize()
+
         if viewer is not None:
             viewer.close()
 
@@ -439,4 +531,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--report", type=Path, help="Optional JSON report path")
+    parser.add_argument("--record", action="store_true", help="Record a LeRobot v3 demonstration")
+    parser.add_argument("--dataset-root", type=Path, default=ROOT / "outputs" / "lerobot")
+    parser.add_argument("--repo-id", type=str, default="local/harvest")
+    parser.add_argument("--record-fps", type=int, default=30)
     raise SystemExit(run(parser.parse_args()))
