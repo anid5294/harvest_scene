@@ -10,6 +10,7 @@ from g1_harvest import (
     default_home,
     local_to_world,
     robot_placement,
+    tray_support_force,
     world_to_local,
 )
 
@@ -30,6 +31,20 @@ class HarvestGateTests(unittest.TestCase):
         tray = np.array([0.3, -0.4, 0.88])
         self.assertTrue(apple_in_tray(tray + [0.0, 0.0, 0.06], tray, 0.03))
         self.assertFalse(apple_in_tray(tray + [0.0, 0.0, 0.06], tray, 0.2))
+
+    def test_tray_support_only_acts_after_release_inside_tray(self):
+        tray = np.array([0.3, -0.4, 0.88])
+        apple = tray + [0.0, 0.0, 0.05]
+        velocity = np.array([0.0, 0.0, -0.2])
+        np.testing.assert_array_equal(
+            tray_support_force(apple, velocity, tray, 0.068, False), np.zeros(3)
+        )
+        force = tray_support_force(apple, velocity, tray, 0.068, True)
+        self.assertGreater(force[2], 0.068 * 9.81)
+        outside = apple + [0.2, 0.0, 0.0]
+        np.testing.assert_array_equal(
+            tray_support_force(outside, velocity, tray, 0.068, True), np.zeros(3)
+        )
 
     def test_contract_accepts_contiguous_control_trace(self):
         states = np.zeros((4, 43), dtype=np.float32)

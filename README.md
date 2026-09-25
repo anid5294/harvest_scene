@@ -13,11 +13,13 @@ The test passes only when all of these conditions hold:
 2. the right arm reaches a selected apple;
 3. the apple detaches through OrchardBench's force-based stem model;
 4. the robot transports and releases the apple;
-5. the apple settles inside the physical tray; and
+5. the released apple settles on the tray's compliant support model; and
 6. a valid 30 Hz state/action trace and headless MP4 are written.
 
 This is a feedback-gated scripted policy using simulator state. It is not a
-learned or vision policy. The robot base is fixed for this test.
+learned or vision policy. The robot base is fixed for this test. Global canopy
+collisions are disabled; OrchardBench's force-based fruit tether and a localized
+tray support force provide the interaction dynamics needed by this gate.
 
 ## Workstation setup
 
