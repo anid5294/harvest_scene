@@ -83,7 +83,7 @@ def build_model():
         right_wrist,
         "camera",
         name="right_wrist",
-        pos="0.04 0 0.03",
+        pos="0.08 -0.05 0.06",
         quat="1 0 0 0",
         fovy="70",
     )
